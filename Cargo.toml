@@ -3,6 +3,7 @@ name = "flexint"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+num-bigint = "0.4.4"
+num-traits = "0.2.18"
+trait-tactics = { git = "ssh://git@github.com/wleslie/trait-tactics.git" }

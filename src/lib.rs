@@ -16,20 +16,86 @@ enum Inner<S, B> {
     Big(B),
 }
 
-/// Implements `[&]$Flex ⋄ T` by delegating to either `[&]$Small ⋄ T` or `[&]$Big ⋄ T`.
-macro_rules! binop_lhs_flex {
-    (impl $Op:ident for $($rest:tt)*) => {
-        binop_lhs_flex!(impl $Op<Self> for $($rest)*);
+macro_rules! ref_borrow {
+    (ref $e:expr) => {
+        &$e
     };
+    ($e:expr) => {
+        $e
+    };
+}
+macro_rules! ref_deref {
+    (ref $e:expr) => {
+        *$e
+    };
+    ($e:expr) => {
+        $e
+    };
+}
+
+/// Implpments `[&]$Flex ⋄ &$Small` by delegating to either `$checked_op` or `$Big ⋄ $Small`.
+macro_rules! binop_small {
     (
         impl $Op:ident<$Rhs:ty> for $Lhs:ty {
-            fn $op:ident -> $Output:ty { $($lhs_borrow:tt)? }
+            fn $op:ident -> $Output:ty => $Big:ty, $checked_op:ident { $($lhs_ref:tt)? }
         }
     ) => {
         impl $Op<$Rhs> for $Lhs {
             type Output = $Output;
             fn $op(self, rhs: $Rhs) -> Self::Output {
-                match $($lhs_borrow)? self.0 {
+                match ref_borrow!($($lhs_ref)? self.0) {
+                    Inner::Small(a) => {
+                        if let Some(n) = a.$checked_op(*rhs) {
+                            n.into()
+                        } else {
+                            $Op::$op(<$Big>::from(ref_deref!($($lhs_ref)? a)), *rhs).into()
+                        }
+                    }
+                    Inner::Big(a) => $Op::$op(a, *rhs).into(),
+                }
+            }
+        }
+    };
+}
+macro_rules! assign_small {
+    (
+        impl $Op:ident<$Rhs:ty> for $Lhs:ty {
+            fn $op:ident => $Small:ty, $Big:ty, $checked_op:ident, $Binop:ident::$binop:ident
+        }
+    ) => {
+        impl $Op<$Rhs> for $Lhs {
+            fn $op(&mut self, rhs: $Rhs) {
+                match &mut self.0 {
+                    Inner::Small(a) => {
+                        if let Some(n) = a.$checked_op(*rhs) {
+                            *a = n;
+                        } else {
+                            *self = $Binop::$binop(<$Big>::from(*a), *rhs).into();
+                        }
+                    }
+                    Inner::Big(a) => {
+                        $Op::$op(a, *rhs);
+                        if let Ok(n) = <$Small>::try_from(&*a) {
+                            *self = n.into();
+                        }
+                    }
+                }
+            }
+        }
+    };
+}
+
+/// Implements `[&]$Flex ⋄ T` by delegating to either `[&]$Small ⋄ T` or `[&]$Big ⋄ T`.
+macro_rules! binop_lhs_flex {
+    (
+        impl $Op:ident<$Rhs:ty> for $Lhs:ty {
+            fn $op:ident -> $Output:ty { $($lhs_ref:tt)? }
+        }
+    ) => {
+        impl $Op<$Rhs> for $Lhs {
+            type Output = $Output;
+            fn $op(self, rhs: $Rhs) -> Self::Output {
+                match ref_borrow!($($lhs_ref)? self.0) {
                     Inner::Small(a) => $Op::$op(a, rhs),
                     Inner::Big(a) => $Op::$op(a, rhs),
                 }.into()
@@ -39,12 +105,9 @@ macro_rules! binop_lhs_flex {
 }
 /// Implements `$Flex ⋄= T` by delegating to either `$Small ⋄ T` or `$Big ⋄= T`.
 macro_rules! assign_lhs_flex {
-    (impl $Op:ident for $($rest:tt)*) => {
-        assign_lhs_flex!(impl $Op<Self> for $($rest)*);
-    };
     (
         impl $Op:ident<$Rhs:ty> for $Lhs:ty {
-            fn $op:ident => $Binop:ident::$binop:ident {$Small:ty}
+            fn $op:ident => $Small:ty, $Binop:ident::$binop:ident
         }
     ) => {
         impl $Op<$Rhs> for $Lhs {
@@ -65,18 +128,15 @@ macro_rules! assign_lhs_flex {
 
 /// Implements `T ⋄ [&]$Flex` by delegating to either `T ⋄ [&]$Small` or `T ⋄ [&]$Big`.
 macro_rules! binop_rhs_flex {
-    (impl $Op:ident for $($rest:tt)*) => {
-        binop_rhs_flex!(impl $Op<Self> for $($rest)*);
-    };
     (
         impl $Op:ident<$Rhs:ty> for $Lhs:ty {
-            fn $op:ident -> $Output:ty { $($rhs_borrow:tt)? }
+            fn $op:ident -> $Output:ty { $($rhs_ref:tt)? }
         }
     ) => {
         impl $Op<$Rhs> for $Lhs {
             type Output = $Output;
             fn $op(self, rhs: $Rhs) -> Self::Output {
-                match $($rhs_borrow)? rhs.0 {
+                match ref_borrow!($($rhs_ref)? rhs.0) {
                     Inner::Small(b) => $Op::$op(self, b),
                     Inner::Big(b) => $Op::$op(self, b),
                 }
@@ -86,17 +146,14 @@ macro_rules! binop_rhs_flex {
 }
 /// Implements `T ⋄= [&]$Flex` by delegating to either `T ⋄= [&]$Small` or `T ⋄= [&]$Big`.
 macro_rules! assign_rhs_flex {
-    (impl $Op:ident for $($rest:tt)*) => {
-        assign_rhs_flex!(impl $Op<Self> for $($rest)*);
-    };
     (
         impl $Op:ident<$Rhs:ty> for $Lhs:ty {
-            fn $op:ident { $($rhs_borrow:tt)? }
+            fn $op:ident { $($rhs_ref:tt)? }
         }
     ) => {
         impl $Op<$Rhs> for $Lhs {
             fn $op(&mut self, rhs: $Rhs) {
-                match $($rhs_borrow)? rhs.0 {
+                match ref_borrow!($($rhs_ref)? rhs.0) {
                     Inner::Small(b) => $Op::$op(self, b),
                     Inner::Big(b) => $Op::$op(self, b),
                 }
@@ -182,81 +239,34 @@ macro_rules! flex_type {
         }
 
         // 0.
-        impl Add<&$Small> for &$Flex {
-            type Output = $Flex;
-            fn add(self, rhs: &$Small) -> Self::Output {
-                match &self.0 {
-                    Inner::Small(a) => {
-                        if let Some(n) = a.checked_add(*rhs) {
-                            n.into()
-                        } else {
-                            (<$Big>::from(*a) + *rhs).into()
-                        }
-                    }
-                    Inner::Big(a) => (a + *rhs).into(),
-                }
-            }
-        }
-        binop_lhs_flex!(impl Add<&$Big> for &$Flex { fn add -> $Flex {&} });
-        binop_rhs_flex!(impl Add for &$Flex { fn add -> $Flex {&} });
+        binop_small!(impl Add<&$Small> for &$Flex { fn add -> $Flex => $Big, checked_add {ref} });
+        binop_lhs_flex!(impl Add<&$Big> for &$Flex { fn add -> $Flex {ref} });
+        binop_rhs_flex!(impl Add<Self> for &$Flex { fn add -> $Flex {ref} });
 
         // 1.
-        impl AddAssign<&$Small> for $Flex {
-            fn add_assign(&mut self, rhs: &$Small) {
-                match &mut self.0 {
-                    Inner::Small(a) => {
-                        if let Some(n) = a.checked_add(*rhs) {
-                            *a = n;
-                        } else {
-                            *self = (<$Big>::from(*a) + *rhs).into();
-                        }
-                    }
-                    Inner::Big(a) => {
-                        *a += *rhs;
-                        if let Ok(n) = <$Small>::try_from(&*a) {
-                            // XXX: not needed for unsigned add
-                            *self = n.into();
-                        }
-                    }
-                }
-            }
-        }
-        assign_lhs_flex!(impl AddAssign<&$Big> for $Flex { fn add_assign => Add::add {$Small} });
-        assign_rhs_flex!(impl AddAssign<&$Flex> for $Flex { fn add_assign {&} });
+        assign_small!(impl AddAssign<&$Small> for $Flex { fn add_assign => $Small, $Big, checked_add, Add::add });
+        assign_lhs_flex!(impl AddAssign<&$Big> for $Flex { fn add_assign => $Small, Add::add });
+        assign_rhs_flex!(impl AddAssign<&$Flex> for $Flex { fn add_assign {ref} });
 
         // 2.
         trait_tactics::assign_via_assign_ref!(impl AddAssign<$Small> for $Flex { fn add_assign });
-        assign_lhs_flex!(impl AddAssign<$Big> for $Flex { fn add_assign => Add::add {$Small} });
-        assign_rhs_flex!(impl AddAssign for $Flex { fn add_assign {} });
+        assign_lhs_flex!(impl AddAssign<$Big> for $Flex { fn add_assign => $Small, Add::add });
+        assign_rhs_flex!(impl AddAssign<Self> for $Flex { fn add_assign {} });
 
         // 3.
-        impl Add<&$Small> for $Flex {
-            type Output = Self;
-            fn add(self, rhs: &$Small) -> Self::Output {
-                match self.0 {
-                    Inner::Small(a) => {
-                        if let Some(n) = a.checked_add(*rhs) {
-                            n.into()
-                        } else {
-                            (<$Big>::from(a) + *rhs).into()
-                        }
-                    },
-                    Inner::Big(a) => (a + *rhs).into(),
-                }
-            }
-        }
+        binop_small!(impl Add<&$Small> for $Flex { fn add -> $Flex => $Big, checked_add {} });
         binop_lhs_flex!(impl Add<&$Big> for $Flex { fn add -> Self {} });
-        binop_rhs_flex!(impl Add<&Self> for $Flex { fn add -> Self {&} });
+        binop_rhs_flex!(impl Add<&Self> for $Flex { fn add -> Self {ref} });
 
         // 4.
         trait_tactics::binop_via_binop_ref_rhs!(impl Add<$Small> for &$Flex { fn add -> $Flex });
-        binop_lhs_flex!(impl Add<$Big> for &$Flex { fn add -> $Flex {&} });
-        binop_rhs_flex!(impl Add<$Flex> for &$Flex { fn add -> $Flex {&} });
+        binop_lhs_flex!(impl Add<$Big> for &$Flex { fn add -> $Flex {ref} });
+        binop_rhs_flex!(impl Add<$Flex> for &$Flex { fn add -> $Flex {ref} });
 
         // 5.
         trait_tactics::binop_via_assign!(impl Add<$Small> for $Flex { fn add => AddAssign::add_assign });
         binop_lhs_flex!(impl Add<$Big> for $Flex { fn add -> Self {} });
-        binop_rhs_flex!(impl Add for $Flex { fn add -> Self {} });
+        binop_rhs_flex!(impl Add<Self> for $Flex { fn add -> Self {} });
     };
 }
 

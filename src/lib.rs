@@ -1,6 +1,7 @@
 //! Arbitrary-precision numeric types, optimized for small values.
 
 use std::{
+    borrow::Cow,
     cmp::Ordering,
     error::Error,
     fmt::{self, Display, Formatter},
@@ -9,6 +10,7 @@ use std::{
 };
 
 use num_bigint::{BigInt, BigUint, ParseBigIntError, Sign};
+use num_integer::Integer;
 use num_traits::{CheckedMul, Num, One, Pow, Signed, Unsigned, Zero};
 
 // Invariant: 'Small' must be used when value fits. 'Big' shall be used *only* when value does not
@@ -254,6 +256,14 @@ macro_rules! flex_type {
             }
         }
 
+        impl<'a> From<&'a $Flex> for Cow<'a, $Big> {
+            fn from(n: &'a $Flex) -> Self {
+                match &n.0 {
+                    Inner::Small(n) => Cow::Owned((*n).into()),
+                    Inner::Big(n) => Cow::Borrowed(n),
+                }
+            }
+        }
         impl From<$Flex> for $Big {
             fn from(n: $Flex) -> Self {
                 match n.0 {
@@ -262,6 +272,7 @@ macro_rules! flex_type {
                 }
             }
         }
+        // TODO: TryFrom<$Flex> for $Small...
 
         // TODO: put this in trait_tactics
         impl PartialOrd for $Flex {
@@ -357,6 +368,35 @@ macro_rules! flex_type {
             }
         }
     };
+}
+
+// TODO: optimize these impls
+impl Integer for FlexInt {
+    fn div_floor(&self, other: &Self) -> Self {
+        Cow::from(self).div_floor(&*Cow::from(other)).into()
+    }
+    fn mod_floor(&self, other: &Self) -> Self {
+        Cow::from(self).mod_floor(&*Cow::from(other)).into()
+    }
+    fn gcd(&self, other: &Self) -> Self {
+        Cow::from(self).gcd(&*Cow::from(other)).into()
+    }
+    fn lcm(&self, other: &Self) -> Self {
+        Cow::from(self).lcm(&*Cow::from(other)).into()
+    }
+    fn is_multiple_of(&self, other: &Self) -> bool {
+        Cow::from(self).is_multiple_of(&*Cow::from(other)).into()
+    }
+    fn is_even(&self) -> bool {
+        Cow::from(self).is_even()
+    }
+    fn is_odd(&self) -> bool {
+        Cow::from(self).is_odd()
+    }
+    fn div_rem(&self, other: &Self) -> (Self, Self) {
+        let (div, rem) = Cow::from(self).div_rem(&*Cow::from(other));
+        (div.into(), rem.into())
+    }
 }
 
 fn checked_pow<T: One + CheckedMul>(mut base: T, mut exp: u64) -> Option<T> {

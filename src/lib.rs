@@ -2,12 +2,14 @@
 
 use std::{
     cmp::Ordering,
+    error::Error,
     fmt::{self, Display, Formatter},
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Sub, SubAssign},
+    str::FromStr,
 };
 
-use num_bigint::{BigInt, BigUint, Sign};
-use num_traits::{CheckedMul, One, Pow};
+use num_bigint::{BigInt, BigUint, ParseBigIntError, Sign};
+use num_traits::{CheckedMul, Num, One, Pow, Signed, Unsigned, Zero};
 
 // Invariant: 'Small' must be used when value fits. 'Big' shall be used *only* when value does not
 // fit in 'Small'
@@ -303,27 +305,57 @@ macro_rules! flex_type {
         binop_family_with_assign!(Div::div, DivAssign::div_assign, <$Small>::checked_div, $Flex, $Small, $Big);
         binop_family_with_assign!(Rem::rem, RemAssign::rem_assign, <$Small>::checked_rem, $Flex, $Small, $Big);
 
-        // Pow is special because the RHS is always unsigned. Also, there's no PowAssign
-
+        // Pow is special because the RHS is always unsigned. Also, there's no PowAssign.
         // &$Flex ** &T
         binop_flex_small!(Pow::pow, $Flex as ref, u64, $Big, checked_pow);
         binop_flex_t_via_big!(Pow::pow, $Flex as ref, &BigUint, $Big);
         binop_t_flex!(Pow::pow, &$Flex, FlexUint as ref, $Flex);
-
         // $Flex ** &T
         binop_flex_small!(Pow::pow, $Flex, u64, $Big, checked_pow);
         binop_flex_t_via_big!(Pow::pow, $Flex, &BigUint, $Big);
         binop_t_flex!(Pow::pow, $Flex, FlexUint as ref, $Flex);
-
         // &$Flex ** T
         trait_tactics::binop_via_binop_ref_rhs!(impl Pow<u64> for &$Flex { fn pow -> $Flex });
         binop_flex_t_via_big!(Pow::pow, $Flex as ref, BigUint, $Big);
         binop_t_flex!(Pow::pow, &$Flex, FlexUint, $Flex);
-
         // $Flex ** T
         trait_tactics::binop_via_binop_ref_rhs!(impl Pow<u64> for $Flex { fn pow -> $Flex });
         binop_flex_t_via_big!(Pow::pow, $Flex, BigUint, $Big);
         binop_t_flex!(Pow::pow, $Flex, FlexUint, $Flex);
+
+        impl Zero for $Flex {
+            fn zero() -> Self {
+                Self(Inner::Small(0))
+            }
+            fn is_zero(&self) -> bool {
+                matches!(self, Self(Inner::Small(0)))
+            }
+        }
+        impl One for $Flex {
+            fn one() -> Self {
+                Self(Inner::Small(1))
+            }
+            fn is_one(&self) -> bool {
+                matches!(self, Self(Inner::Small(1)))
+            }
+        }
+
+        impl Num for $Flex {
+            type FromStrRadixErr = ParseError;
+            fn from_str_radix(str: &str, radix: u32) -> Result<Self, Self::FromStrRadixErr> {
+                Ok(if let Ok(n) = <$Small>::from_str_radix(str, radix) {
+                    n.into()
+                } else {
+                    <$Big>::from_str_radix(str, radix).map_err(ParseError)?.into()
+                })
+            }
+        }
+        impl FromStr for $Flex {
+            type Err = ParseError;
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                Self::from_str_radix(s, 10)
+            }
+        }
     };
 }
 
@@ -357,9 +389,60 @@ flex_type!(
     cmp_small_big = |big| Sign::NoSign.cmp(&big.sign()),
 );
 
+// For obvious reasons, these are only implemented for unsigned integers
+impl Unsigned for FlexUint {} // what is the point of this trait?
+
 // For obvious reasons, these are only implemented for signed integers
 impl_neg!(FlexInt, BigInt, i64::checked_neg);
 impl_neg!(FlexInt as ref, BigInt, i64::checked_neg);
+impl Signed for FlexInt {
+    fn abs(&self) -> Self {
+        match &self.0 {
+            Inner::Small(n) => {
+                if let Some(n) = n.checked_abs() {
+                    n.into()
+                } else {
+                    BigInt::from(*n).abs().into()
+                }
+            }
+            Inner::Big(n) => n.abs().into(),
+        }
+    }
+    fn abs_sub(&self, other: &Self) -> Self {
+        if self > other {
+            self - other
+        } else {
+            other - self
+        }
+    }
+    fn signum(&self) -> Self {
+        match &self.0 {
+            Inner::Small(n) => n.signum().into(),
+            Inner::Big(n) => n.signum().into(),
+        }
+    }
+    fn is_positive(&self) -> bool {
+        match &self.0 {
+            Inner::Small(n) => n.is_positive(),
+            Inner::Big(n) => n.is_positive(),
+        }
+    }
+    fn is_negative(&self) -> bool {
+        match &self.0 {
+            Inner::Small(n) => n.is_negative(),
+            Inner::Big(n) => n.is_negative(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ParseError(ParseBigIntError);
+impl Display for ParseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+impl Error for ParseError {}
 
 #[cfg(test)]
 mod tests {

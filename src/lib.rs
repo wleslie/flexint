@@ -371,36 +371,36 @@ macro_rules! flex_type {
                 Self::from_str_radix(s, 10)
             }
         }
-    };
-}
 
-// TODO: optimize these impls
-impl Integer for FlexInt {
-    fn div_floor(&self, other: &Self) -> Self {
-        Cow::from(self).div_floor(&*Cow::from(other)).into()
-    }
-    fn mod_floor(&self, other: &Self) -> Self {
-        Cow::from(self).mod_floor(&*Cow::from(other)).into()
-    }
-    fn gcd(&self, other: &Self) -> Self {
-        Cow::from(self).gcd(&*Cow::from(other)).into()
-    }
-    fn lcm(&self, other: &Self) -> Self {
-        Cow::from(self).lcm(&*Cow::from(other)).into()
-    }
-    fn is_multiple_of(&self, other: &Self) -> bool {
-        Cow::from(self).is_multiple_of(&*Cow::from(other)).into()
-    }
-    fn is_even(&self) -> bool {
-        Cow::from(self).is_even()
-    }
-    fn is_odd(&self) -> bool {
-        Cow::from(self).is_odd()
-    }
-    fn div_rem(&self, other: &Self) -> (Self, Self) {
-        let (div, rem) = Cow::from(self).div_rem(&*Cow::from(other));
-        (div.into(), rem.into())
-    }
+        // TODO: optimize these impls
+        impl Integer for $Flex {
+            fn div_floor(&self, other: &Self) -> Self {
+                Cow::from(self).div_floor(&*Cow::from(other)).into()
+            }
+            fn mod_floor(&self, other: &Self) -> Self {
+                Cow::from(self).mod_floor(&*Cow::from(other)).into()
+            }
+            fn gcd(&self, other: &Self) -> Self {
+                Cow::from(self).gcd(&*Cow::from(other)).into()
+            }
+            fn lcm(&self, other: &Self) -> Self {
+                Cow::from(self).lcm(&*Cow::from(other)).into()
+            }
+            fn is_multiple_of(&self, other: &Self) -> bool {
+                Cow::from(self).is_multiple_of(&*Cow::from(other)).into()
+            }
+            fn is_even(&self) -> bool {
+                Cow::from(self).is_even()
+            }
+            fn is_odd(&self) -> bool {
+                Cow::from(self).is_odd()
+            }
+            fn div_rem(&self, other: &Self) -> (Self, Self) {
+                let (div, rem) = Cow::from(self).div_rem(&*Cow::from(other));
+                (div.into(), rem.into())
+            }
+        }
+    };
 }
 
 fn checked_pow<T: One + CheckedMul>(mut base: T, mut exp: u64) -> Option<T> {

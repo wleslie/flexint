@@ -3,7 +3,7 @@
 use std::{
     cmp::Ordering,
     fmt::{self, Display, Formatter},
-    ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Rem, RemAssign, Sub, SubAssign},
+    ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Sub, SubAssign},
 };
 
 use num_bigint::{BigInt, BigUint, Sign};
@@ -179,6 +179,26 @@ macro_rules! binop_family_with_assign {
     };
 }
 
+macro_rules! impl_neg {
+    ($Flex:ty $(as $ref:tt)?, $Big:ty, $checked_op:ident $(,)?) => {
+        impl Neg for ref_borrow!($($ref)? $Flex) {
+            type Output = $Flex;
+            fn neg(self) -> Self::Output {
+                match ref_borrow!($($ref)? self.0) {
+                    Inner::Small(a) => {
+                        if let Some(n) = a.$checked_op() {
+                            n.into()
+                        } else {
+                            (-<$Big>::from(ref_deref!($($ref)? a))).into()
+                        }
+                    }
+                    Inner::Big(a) => (-a).into(),
+                }
+            }
+        }
+            };
+}
+
 macro_rules! flex_type {
     (
         $Flex:ident, $Small:ty, $Big:ty,
@@ -277,3 +297,6 @@ flex_type!(
     from = [u8 u16 u32 u64 u128 usize i8 i16 i32 i128 isize],
     cmp_small_big = |big| Sign::NoSign.cmp(&big.sign()),
 );
+
+impl_neg!(FlexInt, BigInt, checked_neg);
+impl_neg!(FlexInt as ref, BigInt, checked_neg);

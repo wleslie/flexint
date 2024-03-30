@@ -13,6 +13,9 @@ use num_bigint::{BigInt, BigUint, ParseBigIntError, Sign};
 use num_integer::Integer;
 use num_traits::{CheckedMul, Num, One, Pow, Signed, Unsigned, Zero};
 
+#[cfg(feature = "serde")]
+use serde_with::{DeserializeFromStr, SerializeDisplay};
+
 // Invariant: 'Small' must be used when value fits. 'Big' shall be used *only* when value does not
 // fit in 'Small'
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -229,6 +232,7 @@ macro_rules! flex_type {
         cmp_small_big = $cmp_small_big:expr $(,)?
     ) => {
         #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+        #[cfg_attr(feature = "serde", derive(SerializeDisplay, DeserializeFromStr))]
         pub struct $Flex(Inner<$Small, $Big>);
 
         impl From<$Small> for $Flex {

@@ -3,7 +3,7 @@
 use std::{
     cmp::Ordering,
     fmt::{self, Display, Formatter},
-    ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign},
+    ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Rem, RemAssign, Sub, SubAssign},
 };
 
 use num_bigint::{BigInt, BigUint, Sign};
@@ -103,7 +103,7 @@ macro_rules! assign_flex_t {
                 match &mut self.0 {
                     Inner::Small(a) => *self = $Binop::$binop(*a, rhs).into(),
                     Inner::Big(a) => {
-                        *a += rhs;
+                        $Op::$op(a, rhs);
                         if let Ok(n) = <$Small>::try_from(&*a) {
                             *self = n.into();
                         }
@@ -139,6 +139,43 @@ macro_rules! assign_t_flex {
                 }
             }
         }
+    };
+}
+
+macro_rules! binop_family_with_assign {
+    (
+        $Op:ident::$op:ident, $OpAssign:ident::$op_assign:ident, $checked_op:ident,
+        $Flex:ty, $Small:ty, $Big:ty $(,)?
+    ) => {
+        // &$Flex ⋄ &T
+        binop_flex_small!($Op::$op, $Flex as ref, $Small, $Big, $checked_op);
+        binop_flex_t!($Op::$op, $Flex as ref, &$Big);
+        binop_t_flex!($Op::$op, &$Flex, $Flex as ref);
+
+        // $Flex ⋄= &T
+        assign_flex_small!($OpAssign::$op_assign, $Flex, $Small as ref, $Big, $checked_op, $Op::$op);
+        assign_flex_t!($OpAssign::$op_assign, $Flex, $Big as ref, $Small, $Op::$op);
+        assign_t_flex!($OpAssign::$op_assign, $Flex, $Flex as ref);
+
+        // $Flex ⋄= T
+        trait_tactics::assign_via_assign_ref!(impl $OpAssign<$Small> for $Flex { fn $op_assign });
+        assign_flex_t!($OpAssign::$op_assign, $Flex, $Big, $Small, $Op::$op);
+        assign_t_flex!($OpAssign::$op_assign, $Flex, $Flex);
+
+        // $Flex ⋄ &T
+        binop_flex_small!($Op::$op, $Flex, $Small, $Big, $checked_op);
+        binop_flex_t!($Op::$op, $Flex, &$Big);
+        binop_t_flex!($Op::$op, $Flex, $Flex as ref);
+
+        // &$Flex ⋄ T
+        trait_tactics::binop_via_binop_ref_rhs!(impl $Op<$Small> for &$Flex { fn $op -> $Flex });
+        binop_flex_t!($Op::$op, $Flex as ref, $Big);
+        binop_t_flex!($Op::$op, &$Flex, $Flex);
+
+        // $Flex ⋄ T
+        trait_tactics::binop_via_assign!(impl $Op<$Small> for $Flex { fn $op => $OpAssign::$op_assign });
+        binop_flex_t!($Op::$op, $Flex, $Big);
+        binop_t_flex!($Op::$op, $Flex, $Flex);
     };
 }
 
@@ -218,35 +255,14 @@ macro_rules! flex_type {
             }
         }
 
-        // &$Flex ⋄ &T
-        binop_flex_small!(Add::add, $Flex as ref, $Small, $Big, checked_add);
-        binop_flex_t!(Add::add, $Flex as ref, &$Big);
-        binop_t_flex!(Add::add, &$Flex, $Flex as ref);
-
-        // $Flex ⋄= &T
-        assign_flex_small!(AddAssign::add_assign, $Flex, $Small as ref, $Big, checked_add, Add::add);
-        assign_flex_t!(AddAssign::add_assign, $Flex, $Big as ref, $Small, Add::add);
-        assign_t_flex!(AddAssign::add_assign, $Flex, $Flex as ref);
-
-        // $Flex ⋄= T
-        trait_tactics::assign_via_assign_ref!(impl AddAssign<$Small> for $Flex { fn add_assign });
-        assign_flex_t!(AddAssign::add_assign, $Flex, $Big, $Small, Add::add);
-        assign_t_flex!(AddAssign::add_assign, $Flex, $Flex);
-
-        // $Flex ⋄ &T
-        binop_flex_small!(Add::add, $Flex, $Small, $Big, checked_add);
-        binop_flex_t!(Add::add, $Flex, &$Big);
-        binop_t_flex!(Add::add, $Flex, $Flex as ref);
-
-        // &$Flex ⋄ T
-        trait_tactics::binop_via_binop_ref_rhs!(impl Add<$Small> for &$Flex { fn add -> $Flex });
-        binop_flex_t!(Add::add, $Flex as ref, $Big);
-        binop_t_flex!(Add::add, &$Flex, $Flex);
-
-        // $Flex ⋄ T
-        trait_tactics::binop_via_assign!(impl Add<$Small> for $Flex { fn add => AddAssign::add_assign });
-        binop_flex_t!(Add::add, $Flex, $Big);
-        binop_t_flex!(Add::add, $Flex, $Flex);
+        binop_family_with_assign!(Add::add, AddAssign::add_assign, checked_add, $Flex, $Small, $Big);
+        binop_family_with_assign!(Sub::sub, SubAssign::sub_assign, checked_sub, $Flex, $Small, $Big);
+        binop_family_with_assign!(Mul::mul, MulAssign::mul_assign, checked_mul, $Flex, $Small, $Big);
+        // Possible optimization: panic early when the divisor is zero, instead of letting
+        // checked_div/checked_rem fail and falling back to bignum operations that ultimately panic
+        // anyway.
+        binop_family_with_assign!(Div::div, DivAssign::div_assign, checked_div, $Flex, $Small, $Big);
+        binop_family_with_assign!(Rem::rem, RemAssign::rem_assign, checked_rem, $Flex, $Small, $Big);
     };
 }
 

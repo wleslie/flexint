@@ -5,11 +5,13 @@ use std::{
     cmp::Ordering,
     error::Error,
     fmt::{self, Display, Formatter},
+    iter::Sum,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Sub, SubAssign},
     str::FromStr,
 };
 
-use num_bigint::{BigInt, BigUint, ParseBigIntError, Sign};
+pub use num_bigint::Sign;
+use num_bigint::{BigInt, BigUint, ParseBigIntError};
 use num_integer::Integer;
 use num_traits::{CheckedMul, Num, One, Pow, Signed, Unsigned, Zero};
 
@@ -320,6 +322,16 @@ macro_rules! flex_type {
         binop_family_with_assign!(Div::div, DivAssign::div_assign, <$Small>::checked_div, $Flex, $Small, $Big);
         binop_family_with_assign!(Rem::rem, RemAssign::rem_assign, <$Small>::checked_rem, $Flex, $Small, $Big);
 
+        // TODO: could belong in trait-tactics
+        impl Sum for $Flex {
+            fn sum<I>(iter: I) -> Self
+            where
+                I: Iterator<Item = Self>
+            {
+                iter.fold(Zero::zero(), Add::add)
+            }
+        }
+
         // Pow is special because the RHS is always unsigned. Also, there's no PowAssign.
         // &$Flex ** &T
         binop_flex_small!(Pow::pow, $Flex as ref, u64, $Big, checked_pow);
@@ -433,6 +445,26 @@ flex_type!(
     cmp_small_big = |big| Sign::NoSign.cmp(&big.sign()),
 );
 
+// Conversions between signed/unsigned
+impl From<FlexUint> for FlexInt {
+    fn from(n: FlexUint) -> Self {
+        match n.0 {
+            Inner::Small(n) => n.into(),
+            Inner::Big(n) => Self(Inner::Big(n.into())),
+        }
+    }
+}
+impl TryFrom<FlexInt> for FlexUint {
+    type Error = TryFromSignedError;
+    fn try_from(n: FlexInt) -> Result<Self, Self::Error> {
+        const ERR: TryFromSignedError = TryFromSignedError(());
+        Ok(match n.0 {
+            Inner::Small(n) => Self(Inner::Small(n.try_into().or(Err(ERR))?)),
+            Inner::Big(n) => BigUint::try_from(n).or(Err(ERR))?.into(),
+        })
+    }
+}
+
 // For obvious reasons, these are only implemented for unsigned integers
 impl Unsigned for FlexUint {} // what is the point of this trait?
 
@@ -478,6 +510,24 @@ impl Signed for FlexInt {
         }
     }
 }
+impl FlexInt {
+    pub fn into_parts(self) -> (Sign, FlexUint) {
+        fn small_sign(n: i64) -> Sign {
+            match n.cmp(&0) {
+                Ordering::Less => Sign::Minus,
+                Ordering::Equal => Sign::NoSign,
+                Ordering::Greater => Sign::Plus,
+            }
+        }
+        match self.0 {
+            Inner::Small(n) => (small_sign(n), FlexUint(Inner::Small(n.unsigned_abs()))),
+            Inner::Big(n) => {
+                let (sign, mag) = n.into_parts();
+                (sign, mag.into())
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ParseError(ParseBigIntError);
@@ -487,6 +537,15 @@ impl Display for ParseError {
     }
 }
 impl Error for ParseError {}
+
+#[derive(Debug, Clone)]
+pub struct TryFromSignedError(());
+impl Display for TryFromSignedError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "cannot convert negative integer to unsigned")
+    }
+}
+impl Error for TryFromSignedError {}
 
 #[cfg(test)]
 mod tests {

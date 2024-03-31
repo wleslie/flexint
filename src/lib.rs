@@ -1,6 +1,7 @@
 //! Arbitrary-precision numeric types, optimized for small values.
 
 use std::{
+    any,
     borrow::Cow,
     cmp::Ordering,
     error::Error,
@@ -11,9 +12,9 @@ use std::{
 };
 
 pub use num_bigint::Sign;
-use num_bigint::{BigInt, BigUint, ParseBigIntError};
+use num_bigint::{BigInt, BigUint, ParseBigIntError, ToBigInt, ToBigUint};
 use num_integer::Integer;
-use num_traits::{CheckedMul, Num, One, Pow, Signed, Unsigned, Zero};
+use num_traits::{CheckedMul, FromPrimitive, Num, One, Pow, Signed, ToPrimitive, Unsigned, Zero};
 
 #[cfg(feature = "serde")]
 use serde_with::{DeserializeFromStr, SerializeDisplay};
@@ -231,6 +232,7 @@ macro_rules! flex_type {
     (
         $Flex:ident, $Small:ty, $Big:ty,
         from = [$($From:ty)*],
+        try_from = [$($TryFrom:ty)*],
         cmp_small_big = $cmp_small_big:expr $(,)?
     ) => {
         #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -253,6 +255,18 @@ macro_rules! flex_type {
                 }
             }
         )*
+        $(
+            impl TryFrom<$TryFrom> for $Flex {
+                type Error = RangeError;
+                fn try_from(n: $TryFrom) -> Result<Self, Self::Error> {
+                    Ok(if let Ok(n) = <$Small>::try_from(n) {
+                        n.into()
+                    } else {
+                        Self(Inner::Big(n.try_into().map_err(|_| RangeError::new::<Self>())?))
+                    })
+                }
+            }
+        )*
         impl From<$Big> for $Flex {
             fn from(n: $Big) -> Self {
                 Self(match n.try_into() {
@@ -261,13 +275,73 @@ macro_rules! flex_type {
                 })
             }
         }
+        impl FromPrimitive for $Flex {
+            fn from_u64(n: u64) -> Option<Self> {
+                Self::try_from(n).ok()
+            }
+            fn from_i64(n: i64) -> Option<Self> {
+                Self::try_from(n).ok()
+            }
+            fn from_u128(n: u128) -> Option<Self> {
+                Self::try_from(n).ok()
+            }
+            fn from_i128(n: i128) -> Option<Self> {
+                Self::try_from(n).ok()
+            }
+            fn from_f64(n: f64) -> Option<Self> {
+                <$Big>::from_f64(n).map(Into::into)
+            }
+        }
+        impl ToPrimitive for $Flex {
+            fn to_u64(&self) -> Option<u64> {
+                match &self.0 {
+                    Inner::Small(n) => n.to_u64(),
+                    Inner::Big(n) => n.to_u64(),
+                }
+            }
+            fn to_i64(&self) -> Option<i64> {
+                match &self.0 {
+                    Inner::Small(n) => n.to_i64(),
+                    Inner::Big(n) => n.to_i64(),
+                }
+            }
+            fn to_u128(&self) -> Option<u128> {
+                match &self.0 {
+                    Inner::Small(n) => n.to_u128(),
+                    Inner::Big(n) => n.to_u128(),
+                }
+            }
+            fn to_i128(&self) -> Option<i128> {
+                match &self.0 {
+                    Inner::Small(n) => n.to_i128(),
+                    Inner::Big(n) => n.to_i128(),
+                }
+            }
+            fn to_f64(&self) -> Option<f64> {
+                match &self.0 {
+                    Inner::Small(n) =>n.to_f64(),
+                    Inner::Big(n) => n.to_f64(),
+                }
+            }
+        }
 
+        // XXX: This is esoteric. Should this be an inherent method instead of a From impl?
         impl<'a> From<&'a $Flex> for Cow<'a, $Big> {
             fn from(n: &'a $Flex) -> Self {
                 match &n.0 {
                     Inner::Small(n) => Cow::Owned((*n).into()),
                     Inner::Big(n) => Cow::Borrowed(n),
                 }
+            }
+        }
+        impl ToBigUint for $Flex {
+            fn to_biguint(&self) -> Option<BigUint> {
+                Cow::from(self).into_owned().try_into().ok()
+            }
+        }
+        impl ToBigInt for $Flex {
+            fn to_bigint(&self) -> Option<BigInt> {
+                Cow::from(self).into_owned().try_into().ok()
             }
         }
         impl From<$Flex> for $Big {
@@ -278,7 +352,6 @@ macro_rules! flex_type {
                 }
             }
         }
-        // TODO: TryFrom<$Flex> for $Small...
 
         // TODO: put this in trait_tactics
         impl PartialOrd for $Flex {
@@ -436,12 +509,14 @@ fn checked_pow<T: One + CheckedMul>(mut base: T, mut exp: u64) -> Option<T> {
 flex_type!(
     FlexUint, u64, BigUint,
     from = [u8 u16 u32 u128 usize],
+    try_from = [i8 i16 i32 i64 i128 isize],
     cmp_small_big = |_| Ordering::Greater,
 );
 
 flex_type!(
     FlexInt, i64, BigInt,
     from = [u8 u16 u32 u64 u128 usize i8 i16 i32 i128 isize],
+    try_from = [],
     cmp_small_big = |big| Sign::NoSign.cmp(&big.sign()),
 );
 
@@ -455,12 +530,13 @@ impl From<FlexUint> for FlexInt {
     }
 }
 impl TryFrom<FlexInt> for FlexUint {
-    type Error = TryFromSignedError;
+    type Error = RangeError;
     fn try_from(n: FlexInt) -> Result<Self, Self::Error> {
-        const ERR: TryFromSignedError = TryFromSignedError(());
         Ok(match n.0 {
-            Inner::Small(n) => Self(Inner::Small(n.try_into().or(Err(ERR))?)),
-            Inner::Big(n) => BigUint::try_from(n).or(Err(ERR))?.into(),
+            Inner::Small(n) => {
+                Self(Inner::Small(n.try_into().map_err(|_| RangeError::new::<Self>())?))
+            }
+            Inner::Big(n) => BigUint::try_from(n).map_err(|_| RangeError::new::<Self>())?.into(),
         })
     }
 }
@@ -539,13 +615,20 @@ impl Display for ParseError {
 impl Error for ParseError {}
 
 #[derive(Debug, Clone)]
-pub struct TryFromSignedError(());
-impl Display for TryFromSignedError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "cannot convert negative integer to unsigned")
+pub struct RangeError {
+    type_name: &'static str,
+}
+impl RangeError {
+    fn new<T>() -> Self {
+        Self { type_name: any::type_name::<T>() }
     }
 }
-impl Error for TryFromSignedError {}
+impl Display for RangeError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "argument value out of range for {}", self.type_name)
+    }
+}
+impl Error for RangeError {}
 
 #[cfg(test)]
 mod tests {

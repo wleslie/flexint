@@ -325,10 +325,10 @@ macro_rules! flex_type {
             }
         }
 
-        // XXX: This is esoteric. Should this be an inherent method instead of a From impl?
-        impl<'a> From<&'a $Flex> for Cow<'a, $Big> {
-            fn from(n: &'a $Flex) -> Self {
-                match &n.0 {
+        impl $Flex {
+            #[doc = concat!("Converts `self` to a [", stringify!($Big), "], avoiding cloning when possible.")]
+            pub fn to_big(&self) -> Cow<'_, $Big> {
+                match &self.0 {
                     Inner::Small(n) => Cow::Owned((*n).into()),
                     Inner::Big(n) => Cow::Borrowed(n),
                 }
@@ -336,12 +336,12 @@ macro_rules! flex_type {
         }
         impl ToBigUint for $Flex {
             fn to_biguint(&self) -> Option<BigUint> {
-                Cow::from(self).into_owned().try_into().ok()
+                self.to_big().into_owned().try_into().ok()
             }
         }
         impl ToBigInt for $Flex {
             fn to_bigint(&self) -> Option<BigInt> {
-                Cow::from(self).into_owned().try_into().ok()
+                self.to_big().into_owned().try_into().ok()
             }
         }
         impl From<$Flex> for $Big {
@@ -460,28 +460,28 @@ macro_rules! flex_type {
         // TODO: optimize these impls
         impl Integer for $Flex {
             fn div_floor(&self, other: &Self) -> Self {
-                Cow::from(self).div_floor(&*Cow::from(other)).into()
+                self.to_big().div_floor(&*other.to_big()).into()
             }
             fn mod_floor(&self, other: &Self) -> Self {
-                Cow::from(self).mod_floor(&*Cow::from(other)).into()
+                self.to_big().mod_floor(&*other.to_big()).into()
             }
             fn gcd(&self, other: &Self) -> Self {
-                Cow::from(self).gcd(&*Cow::from(other)).into()
+                self.to_big().gcd(&*other.to_big()).into()
             }
             fn lcm(&self, other: &Self) -> Self {
-                Cow::from(self).lcm(&*Cow::from(other)).into()
+                self.to_big().lcm(&*other.to_big()).into()
             }
             fn is_multiple_of(&self, other: &Self) -> bool {
-                Cow::from(self).is_multiple_of(&*Cow::from(other)).into()
+                self.to_big().is_multiple_of(&*other.to_big()).into()
             }
             fn is_even(&self) -> bool {
-                Cow::from(self).is_even()
+                self.to_big().is_even()
             }
             fn is_odd(&self) -> bool {
-                Cow::from(self).is_odd()
+                self.to_big().is_odd()
             }
             fn div_rem(&self, other: &Self) -> (Self, Self) {
-                let (div, rem) = Cow::from(self).div_rem(&*Cow::from(other));
+                let (div, rem) = self.to_big().div_rem(&*other.to_big());
                 (div.into(), rem.into())
             }
         }

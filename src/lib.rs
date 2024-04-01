@@ -231,10 +231,12 @@ macro_rules! impl_neg {
 macro_rules! flex_type {
     (
         $Flex:ident, $Small:ty, $Big:ty,
+        desc = $desc:expr,
         from = [$($From:ty)*],
         try_from = [$($TryFrom:ty)*],
         cmp_small_big = $cmp_small_big:expr $(,)?
     ) => {
+        #[doc = concat!("An arbitrary-precision ", $desc, " integer type, optimized for small values.")]
         #[derive(Debug, Clone, PartialEq, Eq, Hash)]
         #[cfg_attr(feature = "serde", derive(SerializeDisplay, DeserializeFromStr))]
         pub struct $Flex(Inner<$Small, $Big>);
@@ -508,6 +510,7 @@ fn checked_pow<T: One + CheckedMul>(mut base: T, mut exp: u64) -> Option<T> {
 
 flex_type!(
     FlexUint, u64, BigUint,
+    desc = "unsigned",
     from = [u8 u16 u32 u128 usize],
     try_from = [i8 i16 i32 i64 i128 isize],
     cmp_small_big = |_| Ordering::Greater,
@@ -515,6 +518,7 @@ flex_type!(
 
 flex_type!(
     FlexInt, i64, BigInt,
+    desc = "signed",
     from = [u8 u16 u32 u64 u128 usize i8 i16 i32 i128 isize],
     try_from = [],
     cmp_small_big = |big| Sign::NoSign.cmp(&big.sign()),
@@ -587,6 +591,7 @@ impl Signed for FlexInt {
     }
 }
 impl FlexInt {
+    /// Decomposes this integer into its [Sign] and [FlexUint] magnitude.
     pub fn into_parts(self) -> (Sign, FlexUint) {
         fn small_sign(n: i64) -> Sign {
             match n.cmp(&0) {

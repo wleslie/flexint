@@ -355,12 +355,8 @@ macro_rules! flex_type {
             }
         }
 
-        // TODO: put this in trait_tactics
-        impl PartialOrd for $Flex {
-            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-                Some(self.cmp(other))
-            }
-        }
+        #[trait_tactics::partial_ord_via_ord]
+        impl PartialOrd for $Flex {}
         impl Ord for $Flex {
             fn cmp(&self, other: &Self) -> Ordering {
                 let cmp_small_big: fn(&$Big) -> Ordering = $cmp_small_big;
@@ -397,15 +393,8 @@ macro_rules! flex_type {
         binop_family_with_assign!(Div::div, DivAssign::div_assign, <$Small>::checked_div, $Flex, $Small, $Big);
         binop_family_with_assign!(Rem::rem, RemAssign::rem_assign, <$Small>::checked_rem, $Flex, $Small, $Big);
 
-        // TODO: could belong in trait-tactics
-        impl Sum for $Flex {
-            fn sum<I>(iter: I) -> Self
-            where
-                I: Iterator<Item = Self>
-            {
-                iter.fold(Zero::zero(), Add::add)
-            }
-        }
+        #[trait_tactics::sum_via_fold_zero_add]
+        impl Sum for $Flex {}
 
         // Pow is special because the RHS is always unsigned. Also, there's no PowAssign.
         // &$Flex ** &T

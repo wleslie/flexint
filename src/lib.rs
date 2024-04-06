@@ -187,7 +187,8 @@ macro_rules! binop_family_with_assign {
         assign_t_flex!($OpAssign::$op_assign, $Flex, $Flex as ref);
 
         // $Flex ⋄= T
-        trait_tactics::assign_via_assign_ref!(impl $OpAssign<$Small> for $Flex { fn $op_assign });
+        #[trait_tactics::assign_via_assign_ref(fn = $op_assign)]
+        impl $OpAssign<$Small> for $Flex {}
         assign_flex_t!($OpAssign::$op_assign, $Flex, $Big, $Small, $Op::$op);
         assign_t_flex!($OpAssign::$op_assign, $Flex, $Flex);
 
@@ -197,12 +198,14 @@ macro_rules! binop_family_with_assign {
         binop_t_flex!($Op::$op, $Flex, $Flex as ref, $Flex);
 
         // &$Flex ⋄ T
-        trait_tactics::binop_via_binop_ref_rhs!(impl $Op<$Small> for &$Flex { fn $op -> $Flex });
+        #[trait_tactics::binop_via_binop_ref_rhs(fn = $op, output = $Flex)]
+        impl $Op<$Small> for &$Flex {}
         binop_flex_t!($Op::$op, $Flex as ref, $Big);
         binop_t_flex!($Op::$op, &$Flex, $Flex, $Flex);
 
         // $Flex ⋄ T
-        trait_tactics::binop_via_assign!(impl $Op<$Small> for $Flex { fn $op => $OpAssign::$op_assign });
+        #[trait_tactics::binop_via_assign(fn = $op, assign = $OpAssign::$op_assign)]
+        impl $Op<$Small> for $Flex {}
         binop_flex_t!($Op::$op, $Flex, $Big);
         binop_t_flex!($Op::$op, $Flex, $Flex, $Flex);
     };
@@ -406,11 +409,13 @@ macro_rules! flex_type {
         binop_flex_t_via_big!(Pow::pow, $Flex, &BigUint, $Big);
         binop_t_flex!(Pow::pow, $Flex, FlexUint as ref, $Flex);
         // &$Flex ** T
-        trait_tactics::binop_via_binop_ref_rhs!(impl Pow<u64> for &$Flex { fn pow -> $Flex });
+        #[trait_tactics::binop_via_binop_ref_rhs(fn = pow, output = $Flex)]
+        impl Pow<u64> for &$Flex {}
         binop_flex_t_via_big!(Pow::pow, $Flex as ref, BigUint, $Big);
         binop_t_flex!(Pow::pow, &$Flex, FlexUint, $Flex);
         // $Flex ** T
-        trait_tactics::binop_via_binop_ref_rhs!(impl Pow<u64> for $Flex { fn pow -> $Flex });
+        #[trait_tactics::binop_via_binop_ref_rhs(fn = pow, output = $Flex)]
+        impl Pow<u64> for $Flex {}
         binop_flex_t_via_big!(Pow::pow, $Flex, BigUint, $Big);
         binop_t_flex!(Pow::pow, $Flex, FlexUint, $Flex);
 

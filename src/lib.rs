@@ -1,4 +1,4 @@
-//! Arbitrary-precision numeric types, optimized for small values.
+//! Big integer types, optimized for small values.
 
 use std::{
     any,
@@ -239,7 +239,7 @@ macro_rules! flex_type {
         try_from = [$($TryFrom:ty)*],
         cmp_small_big = $cmp_small_big:expr $(,)?
     ) => {
-        #[doc = concat!("An arbitrary-precision ", $desc, " integer type, optimized for small values.")]
+        #[doc = concat!("A big ", $desc, " integer type, optimized for small values.")]
         #[derive(Debug, Clone, PartialEq, Eq, Hash)]
         #[cfg_attr(feature = "serde", derive(SerializeDisplay, DeserializeFromStr))]
         pub struct $Flex(Inner<$Small, $Big>);

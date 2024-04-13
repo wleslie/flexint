@@ -719,6 +719,8 @@ dependencies = [
 [[package]]
 name = "trait-tactics"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be6c62122af1910fbe00bfce2e7e025e91b47fb6a294e7c185e01d619a60ccdb"
 dependencies = [
  "num-traits",
  "trait-tactics-macros",
@@ -727,6 +729,8 @@ dependencies = [
 [[package]]
 name = "trait-tactics-macros"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e38e91180620c82a9e4b2af268eaa59d3559b0f243890aaa90907fa1abc3c514"
 dependencies = [
  "itertools 0.12.1",
  "proc-macro2",

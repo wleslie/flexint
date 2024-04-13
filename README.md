@@ -13,3 +13,7 @@ small values, while only introducing a 39% slowdown for big values.
 
 - `serde`: provides implementations of `serde::Serialize` and `serde::Deserialize` for `FlexUint`
   and `FlexInt`.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
